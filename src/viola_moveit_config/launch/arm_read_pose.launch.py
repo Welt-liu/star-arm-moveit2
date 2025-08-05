@@ -15,9 +15,8 @@ def generate_launch_description():
     arm_read_pose_config_path = os.path.join(
         get_package_share_directory('viola_moveit_config'),
         'config',
-        'arm_read_pose.yaml'
         )
-    
+
     declare_param_file_cmd=DeclareLaunchArgument(
         'arm_params',
         default_value= arm_read_pose_config_path,

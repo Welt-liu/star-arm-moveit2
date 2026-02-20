@@ -1,214 +1,216 @@
+/**
+ * arm_moveit_write.cpp
+ * 功能：接收位姿指令并控制机械臂运动。
+ * 改进点：
+ * 1. 修复 setMaxAccelerationScalingFactor(0) 的严重 Bug。
+ * 2. 采用【生产者-消费者】模型：回调函数只更新目标，独立线程负责规划执行。
+ * 3. 解决回调阻塞导致 MoveIt 无法获取 TF/JointStates 从而规划失败的问题。
+ */
+
 #include <memory>
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
+
 #include "rclcpp/rclcpp.hpp"
 #include "moveit/move_group_interface/move_group_interface.h"
-#include "arm_moveit_write.hpp"
 #include "robo_interfaces/msg/position_orientation.hpp"
 #include "robo_interfaces/msg/set_angle.hpp"
 #include "robo_interfaces/msg/gripper_command.hpp"
+#include "geometry_msgs/msg/pose.hpp"
+
 using moveit::planning_interface::MoveGroupInterface;
-
-
 
 class ArmMoveitControl : public rclcpp::Node
 {
 public:
-  ArmMoveitControl() : Node("arm_moveit_control"), logger_(this->get_logger()), is_first_message_(true), last_gripper_state_("")
+  ArmMoveitControl() : Node("arm_moveit_control")
   {
-    // 创建订阅者，订阅位置和方向信息
-    subscription_ = create_subscription<robo_interfaces::msg::PositionOrientation>(
+    // 1. 订阅目标位姿
+    pose_sub_ = create_subscription<robo_interfaces::msg::PositionOrientation>(
       "position_orientation_topic", 10,
-      [this](const robo_interfaces::msg::PositionOrientation::SharedPtr msg) {
-        this->topic_callback(msg);
-      });
+      std::bind(&ArmMoveitControl::pose_callback, this, std::placeholders::_1));
     
-    // 创建订阅者，订阅夹爪控制信息
-    gripper_subscription_ = create_subscription<robo_interfaces::msg::GripperCommand>(
+    // 2. 订阅夹爪命令
+    gripper_sub_ = create_subscription<robo_interfaces::msg::GripperCommand>(
       "gripper_command_topic", 10,
-      [this](const robo_interfaces::msg::GripperCommand::SharedPtr msg) {
-        this->gripper_callback(msg);
-      });
+      std::bind(&ArmMoveitControl::gripper_callback, this, std::placeholders::_1));
     
-    // 创建发布者，用于发送夹爪控制命令
-    set_angle_publisher_ = this->create_publisher<robo_interfaces::msg::SetAngle>(
-      "set_angle_topic", 10);
+    // 3. 发布舵机角度
+    set_angle_pub_ = this->create_publisher<robo_interfaces::msg::SetAngle>("set_angle_topic", 10);
     
-    // 输出启动信息
-    RCLCPP_INFO(logger_, "ARMMoveItControl node started, waiting for position and orientation messages...");
+    // 4. 启动控制线程 (MoveIt 操作都在这里进行)
+    motion_thread_ = std::thread(&ArmMoveitControl::motion_loop, this);
 
-    // 注册关闭回调，确保停止当前运动并清理目标
-    rclcpp::on_shutdown([this]() {
-      if (move_group_interface_) {
-        move_group_interface_->stop();
-        move_group_interface_->clearPoseTargets();
-      }
-      RCLCPP_INFO(logger_, "on_shutdown: stopped motion and cleared pose targets");
-    });
-    
-    // 初始化MoveGroupInterface
-    move_group_interface_ = std::make_shared<MoveGroupInterface>(
-      std::shared_ptr<rclcpp::Node>(this, [](auto) {}), "arm");
-    
-    // 设置运动规划参数（更稳健的默认值）
-    move_group_interface_->setPlanningTime(5.0);              // 规划超时时间 5s
-    move_group_interface_->setMaxVelocityScalingFactor(1);   // 速度缩放 0.2，提升可达性
-    move_group_interface_->setMaxAccelerationScalingFactor(0); // 加速度缩放 0.2
-    // move_group_interface_->setGoalTolerance(0.001);            // 位置容差 1mm
-    // move_group_interface_->setGoalOrientationTolerance(0.005);  // 姿态容差 ~0.57度
-    move_group_interface_->allowReplanning(true);              // 允许重规划
-    move_group_interface_->setNumPlanningAttempts(10);         // 增加尝试次数
-    
-    // 初始化上一次的位置和方向
-    last_position_x_ = 0.0;
-    last_position_y_ = 0.0;
-    last_position_z_ = 0.0;
-    last_orientation_x_ = 0.0;
-    last_orientation_y_ = 0.0;
-    last_orientation_z_ = 0.0;
-    last_orientation_w_ = 0.0;
+    RCLCPP_INFO(this->get_logger(), "ArmMoveitControl ready. Listening for commands...");
   }
 
-  ~ArmMoveitControl() {
-    if (move_group_interface_) {
-      move_group_interface_->stop();
-      move_group_interface_->clearPoseTargets();
+  ~ArmMoveitControl()
+  {
+    // 优雅退出
+    stop_signal_ = true;
+    cv_.notify_all(); // 唤醒沉睡的线程
+    if (motion_thread_.joinable()) {
+      motion_thread_.join();
     }
-    RCLCPP_INFO(logger_, "ArmMoveitControl shutting down, stop and clear targets.");
   }
 
 private:
-  std::mutex mutex_;
-  void topic_callback(const robo_interfaces::msg::PositionOrientation::SharedPtr msg)
-  {
-    // 每次收到姿态消息都执行规划与运动，避免因与上次相同而被过滤
-    geometry_msgs::msg::Pose target_pose;
-    target_pose.position.x = msg->position_x;
-    target_pose.position.y = msg->position_y;
-    target_pose.position.z = msg->position_z;
-    target_pose.orientation.x = msg->orientation_x;
-    target_pose.orientation.y = msg->orientation_y;
-    target_pose.orientation.z = msg->orientation_z;
-    target_pose.orientation.w = msg->orientation_w;
+  // ROS 通讯组件
+  rclcpp::Subscription<robo_interfaces::msg::PositionOrientation>::SharedPtr pose_sub_;
+  rclcpp::Subscription<robo_interfaces::msg::GripperCommand>::SharedPtr gripper_sub_;
+  rclcpp::Publisher<robo_interfaces::msg::SetAngle>::SharedPtr set_angle_pub_;
+  
+  // MoveIt 组件 (将在独立线程初始化)
+  std::shared_ptr<MoveGroupInterface> move_group_;
 
-    // 归一化四元数，避免因非单位四元数导致 IK/规划失败
-    {
-      const double nx = target_pose.orientation.x;
-      const double ny = target_pose.orientation.y;
-      const double nz = target_pose.orientation.z;
-      const double nw = target_pose.orientation.w;
-      const double n = std::sqrt(nx*nx + ny*ny + nz*nz + nw*nw);
-      if (n > 1e-6) {
-        target_pose.orientation.x = nx / n;
-        target_pose.orientation.y = ny / n;
-        target_pose.orientation.z = nz / n;
-        target_pose.orientation.w = nw / n;
+  // 线程同步与状态管理
+  std::thread motion_thread_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  geometry_msgs::msg::Pose latest_target_pose_;
+  bool has_new_target_ = false;
+  std::atomic<bool> stop_signal_{false};
+  std::string last_gripper_state_ = "unknown";
+
+  // --- 回调函数 (生产者) ---
+  // 这些函数必须非常快，不能阻塞
+  void pose_callback(const robo_interfaces::msg::PositionOrientation::SharedPtr msg)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    // 转换消息到 Geometry Pose
+    latest_target_pose_.position.x = msg->position_x;
+    latest_target_pose_.position.y = msg->position_y;
+    latest_target_pose_.position.z = msg->position_z;
+    latest_target_pose_.orientation.x = msg->orientation_x;
+    latest_target_pose_.orientation.y = msg->orientation_y;
+    latest_target_pose_.orientation.z = msg->orientation_z;
+    latest_target_pose_.orientation.w = msg->orientation_w;
+    
+    // 标记有新任务
+    has_new_target_ = true;
+    
+    // 唤醒工作线程
+    cv_.notify_one(); 
+    // RCLCPP_INFO(this->get_logger(), "New target received, added to queue.");
+  }
+
+  void gripper_callback(const robo_interfaces::msg::GripperCommand::SharedPtr msg)
+  {
+    // 夹爪控制比较简单，可以直接处理，或者也放入队列。这里简单起见直接处理。
+    if (msg->command != last_gripper_state_) {
+      control_gripper(msg->command);
+      last_gripper_state_ = msg->command;
+      RCLCPP_INFO(this->get_logger(), "Gripper command: %s", msg->command.c_str());
+    }
+  }
+
+  void control_gripper(const std::string& command)
+  {
+    auto msg = robo_interfaces::msg::SetAngle();
+    msg.servo_id = {6};
+    msg.time = {1000}; 
+
+    if (command == "open") {
+      msg.target_angle = {100.0};
+    } else {
+      msg.target_angle = {0.0};
+    }
+    set_angle_pub_->publish(msg);
+  }
+
+  // --- 工作线程 (消费者) ---
+  // 所有 MoveIt 的 Plan 和 Execute 都在这里，不会阻塞 ROS 消息接收
+  void motion_loop()
+  {
+    // 等待节点完全启动
+    rclcpp::sleep_for(std::chrono::seconds(1));
+
+    // 初始化 MoveGroup
+    // 使用 shared_from_this() 确保和 Node 绑定
+    move_group_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "arm");
+
+    // 配置参数
+    move_group_->setPlanningTime(10.0);
+    move_group_->setMaxVelocityScalingFactor(1.0);
+    // [修复] 加速度不能为0，否则无法规划！设置为 0.2 或其他合理值
+    move_group_->setMaxAccelerationScalingFactor(0.5); 
+    move_group_->setNumPlanningAttempts(10);
+    move_group_->allowReplanning(true);
+
+    geometry_msgs::msg::Pose current_goal;
+
+    while (rclcpp::ok() && !stop_signal_) {
+      
+      // 1. 等待新目标
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        // 等待条件：收到停止信号 或者 有新目标
+        cv_.wait(lock, [this]{ return stop_signal_ || has_new_target_; });
+
+        if (stop_signal_) break;
+
+        // 取出最新目标，并重置标志位
+        // 这样做的好处是：如果在机械臂运动期间来了10个新点，
+        // 等它动完，我们只取这10个点里最新的那个，忽略中间的，实现“最新点跟随”
+        current_goal = latest_target_pose_;
+        has_new_target_ = false;
+      }
+
+      // 2. 执行运动规划
+      // 归一化四元数 (防止非法数据导致规划器崩溃)
+      double norm = std::sqrt(
+        current_goal.orientation.x*current_goal.orientation.x + 
+        current_goal.orientation.y*current_goal.orientation.y + 
+        current_goal.orientation.z*current_goal.orientation.z + 
+        current_goal.orientation.w*current_goal.orientation.w);
+      
+      if (std::abs(norm - 1.0) > 1e-3 && norm > 1e-6) {
+        current_goal.orientation.x /= norm;
+        current_goal.orientation.y /= norm;
+        current_goal.orientation.z /= norm;
+        current_goal.orientation.w /= norm;
+      } else if (norm <= 1e-6) {
+        current_goal.orientation.w = 1.0; // 默认
+      }
+
+      move_group_->setStartStateToCurrentState();
+      move_group_->setPoseTarget(current_goal);
+
+      // 使用 Move() 它是 Plan + Execute 的封装
+      // 如果你想只在规划成功时移动，可以用 plan() then execute()
+      // moveit::planning_interface::MoveGroupInterface::Plan plan;
+      // if (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+      //   move_group_->execute(plan);
+      // }
+      
+      // 直接 Move，简单有效，失败会返回错误码但不会崩溃
+      auto error_code = move_group_->move();
+
+      if (error_code == moveit::core::MoveItErrorCode::SUCCESS) {
+        RCLCPP_INFO(this->get_logger(), "Move executed successfully.");
       } else {
-        // 极端情况下回退为单位四元数
-        target_pose.orientation.x = 0.0;
-        target_pose.orientation.y = 0.0;
-        target_pose.orientation.z = 0.0;
-        target_pose.orientation.w = 1.0;
+        RCLCPP_WARN(this->get_logger(), "Move failed with error code: %d", error_code.val);
       }
     }
-
-    // 与当前机器人状态同步，避免上次执行后内部起始状态不同步导致规划失败
-    move_group_interface_->setStartStateToCurrentState();
-    move_group_interface_->setPoseTarget(target_pose);
-
-    moveit::planning_interface::MoveGroupInterface::Plan plan;
-    bool success = static_cast<bool>(move_group_interface_->plan(plan));
-
-    if (success) {
-      move_group_interface_->execute(plan);
-      move_group_interface_->clearPoseTargets();
-    } else {
-      RCLCPP_ERROR(logger_, "Planning failed!");
-    }
-
-    // 更新上一次的位置和方向（用于日志/诊断）
-    last_position_x_ = msg->position_x;
-    last_position_y_ = msg->position_y;
-    last_position_z_ = msg->position_z;
-    last_orientation_x_ = msg->orientation_x;
-    last_orientation_y_ = msg->orientation_y;
-    last_orientation_z_ = msg->orientation_z;
-    last_orientation_w_ = msg->orientation_w;
-
-    RCLCPP_INFO(logger_, "Position: x=%f, y=%f, z=%f | Orientation: x=%f, y=%f, z=%f, w=%f",
-                msg->position_x, msg->position_y, msg->position_z, msg->orientation_x, msg->orientation_y, msg->orientation_z, msg->orientation_w);
   }
-
-  // 控制夹爪函数
-  void control_gripper(const std::string& gripper_state)
-  {
-    // 创建 SetAngle 消息
-    auto msg = robo_interfaces::msg::SetAngle();
-    
-    // 设置舵机ID为6（夹爪）
-    msg.servo_id = {6};
-    
-    // 根据夹爪状态设置角度
-    double angle = 0.0;
-    if (gripper_state == "open") {
-      angle = 100.0;  // 打开夹爪的角度
-    } else if (gripper_state == "close") {
-      angle = 0.0;    // 关闭夹爪的角度
-    }
-    
-    // 使用角度
-    msg.target_angle = {angle};
-    msg.time = {1500};  // 设置执行时间为1.5秒
-
-    set_angle_publisher_->publish(msg);
-    
-  }
-  // 夹爪控制回调函数
-  void gripper_callback(const robo_interfaces::msg::GripperCommand::SharedPtr msg)
-  {    
-    // 如果夹爪状态发生变化，则控制夹爪
-    // if (last_gripper_state_ != msg->command) {
-    //   control_gripper(msg->command);
-    //   last_gripper_state_ = msg->command;
-    //   RCLCPP_INFO(logger_, "Received gripper command: %s", msg->command.c_str());
-    // }
-
-    // 记录收到的消息
-    RCLCPP_INFO(logger_, "Received gripper command: %s (previous state: %s)", 
-                msg->command.c_str(), last_gripper_state_.c_str());
-    // 无论状态是否变化，都执行夹爪控制
-    control_gripper(msg->command);
-    last_gripper_state_ = msg->command;
-  }
-
-  rclcpp::Subscription<robo_interfaces::msg::PositionOrientation>::SharedPtr subscription_;
-  rclcpp::Subscription<robo_interfaces::msg::GripperCommand>::SharedPtr gripper_subscription_;
-  rclcpp::Publisher<robo_interfaces::msg::SetAngle>::SharedPtr set_angle_publisher_;
-  std::shared_ptr<MoveGroupInterface> move_group_interface_;
-  rclcpp::Logger logger_;
-  
-  // 用于存储上一次的位置和方向
-  double last_position_x_;
-  double last_position_y_;
-  double last_position_z_;
-  double last_orientation_x_;
-  double last_orientation_y_;
-  double last_orientation_z_;
-  double last_orientation_w_;
-  bool is_first_message_;  // 标记是否是第一条消息
-  std::string last_gripper_state_;  // 存储上一次的夹爪状态
 };
 
 int main(int argc, char * argv[])
 {
-  // 初始化ROS
   rclcpp::init(argc, argv);
   
-  // 创建并运行节点
   auto node = std::make_shared<ArmMoveitControl>();
-  rclcpp::spin(node);
   
-  // 关闭ROS
+  // 使用 MultiThreadedExecutor，这对 MoveIt 非常重要
+  // 它允许节点在执行回调的同时，MoveIt 可以在后台接收 TF 和 JointStates
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(node);
+  executor.spin();
+
   rclcpp::shutdown();
   return 0;
 }

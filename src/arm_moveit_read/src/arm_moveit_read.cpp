@@ -1,138 +1,122 @@
+/**
+ * arm_moveit_read.cpp
+ * 功能：读取机械臂当前的位姿和夹爪状态，并发布出去。
+ * 改进点：类封装、移除全局变量、正确处理线程。
+ */
 #include <memory>
 #include <thread>
 #include <cmath>
+#include <mutex>
+
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp/executors/multi_threaded_executor.hpp"
 #include "moveit/move_group_interface/move_group_interface.h"
 #include "robo_interfaces/msg/position_orientation.hpp"
 #include "robo_interfaces/msg/gripper_command.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 
 using moveit::planning_interface::MoveGroupInterface;
-using namespace std::chrono_literals;
 
-// 定义全局变量
-std::shared_ptr<rclcpp::Publisher<robo_interfaces::msg::GripperCommand>> gripper_publisher;
-std::shared_ptr<rclcpp::Node> global_node;
-
-// 存储关节状态信息的全局变量
-double g_joint7_left_radians = 0.0;
-double g_joint7_left_degrees = 0.0;
-std::string g_gripper_state = "unknown";
-
-// 处理joint_states消息的回调函数
-void joint_states_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+class ArmMoveitRead : public rclcpp::Node
 {
-  // 查找joint7_left关节的索引
-  int joint7_left_index = -1;
-  for (size_t i = 0; i < msg->name.size(); ++i) {
-    if (msg->name[i] == "joint7_left") {
-      joint7_left_index = i;
-      break;
+public:
+  ArmMoveitRead() : Node("arm_moveit_read")
+  {
+    // 1. 初始化发布者
+    pose_publisher_ = this->create_publisher<robo_interfaces::msg::PositionOrientation>(
+      "real_position_orientation", 10);
+    
+    gripper_publisher_ = this->create_publisher<robo_interfaces::msg::GripperCommand>(
+      "real_gripper_command", 10);
+
+    // 2. 初始化订阅者 (Joint States)
+    joint_states_subscriber_ = this->create_subscription<sensor_msgs::msg::JointState>(
+      "joint_states", 10, 
+      std::bind(&ArmMoveitRead::joint_states_callback, this, std::placeholders::_1));
+
+    // 3. MoveGroupInterface 需要在节点 Spinning 后初始化，
+    //    或者在单独线程中运行，这里我们选择在单独的 run_loop 线程中初始化和使用。
+    run_thread_ = std::thread(&ArmMoveitRead::run_loop, this);
+
+    RCLCPP_INFO(this->get_logger(), "ArmMoveitRead node started.");
+  }
+
+  ~ArmMoveitRead()
+  {
+    if (run_thread_.joinable()) {
+      run_thread_.join();
     }
   }
 
-  // 如果找到joint7_left关节
-  if (joint7_left_index != -1) {
-    // 获取关节弧度值
-    double radians = msg->position[joint7_left_index];
-    // 转换为角度 (弧度 * 180 / PI)
-    double degrees = ((radians / 0.032) * 100) + 100;
-    
-    // 创建GripperCommand消息
-    auto gripper_msg = robo_interfaces::msg::GripperCommand();
-    
-    // 判断角度，设置命令
-    if (degrees >= 90) {  // 如果角度大于等于90度，认为是open状态
-      gripper_msg.command = "open";
-    } else {  // 否则认为是close状态
-      gripper_msg.command = "close";
+private:
+  // 数据成员
+  rclcpp::Publisher<robo_interfaces::msg::PositionOrientation>::SharedPtr pose_publisher_;
+  rclcpp::Publisher<robo_interfaces::msg::GripperCommand>::SharedPtr gripper_publisher_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_states_subscriber_;
+  
+  std::thread run_thread_;
+  std::shared_ptr<MoveGroupInterface> move_group_interface_;
+
+  // 关节状态回调
+  void joint_states_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+  {
+    // 查找 joint7_left
+    auto it = std::find(msg->name.begin(), msg->name.end(), "joint7_left");
+    if (it != msg->name.end()) {
+      int index = std::distance(msg->name.begin(), it);
+      double radians = msg->position[index];
+      // 转换逻辑保持原样
+      double degrees = ((radians / 0.032) * 100) + 100;
+
+      auto gripper_msg = robo_interfaces::msg::GripperCommand();
+      gripper_msg.command = (degrees >= 80) ? "open" : "close";
+      
+      gripper_publisher_->publish(gripper_msg);
     }
-    
-    // 发布消息
-    gripper_publisher->publish(gripper_msg);
-    
-    // 更新全局变量，以便在main函数中统一打印
-    g_joint7_left_radians = radians;
-    g_joint7_left_degrees = degrees;
-    g_gripper_state = gripper_msg.command;
   }
-}
+
+  // 主循环线程：专门负责 MoveIt 的查询和发布
+  void run_loop()
+  {
+    // 等待 ROS 核心启动
+    rclcpp::sleep_for(std::chrono::seconds(1));
+
+    // 在本线程初始化 MoveGroup，确保线程安全
+    // 注意：MoveIt 内部需要节点 spin 来获取 TF，因此主线程必须 spin
+    move_group_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "arm");
+
+    rclcpp::Rate rate(10); // 10Hz 足够用于监控，过快会占用总线
+
+    while (rclcpp::ok()) {
+      try {
+        // 获取当前位姿
+        auto pose_stamped = move_group_interface_->getCurrentPose();
+        
+        auto message = robo_interfaces::msg::PositionOrientation();
+        message.position_x = pose_stamped.pose.position.x;
+        message.position_y = pose_stamped.pose.position.y;
+        message.position_z = pose_stamped.pose.position.z;
+        message.orientation_x = pose_stamped.pose.orientation.x;
+        message.orientation_y = pose_stamped.pose.orientation.y;
+        message.orientation_z = pose_stamped.pose.orientation.z;
+        message.orientation_w = pose_stamped.pose.orientation.w;
+
+        pose_publisher_->publish(message);
+      } catch (const std::exception &e) {
+        RCLCPP_WARN(this->get_logger(), "Failed to get pose: %s", e.what());
+      }
+      rate.sleep();
+    }
+  }
+};
 
 int main(int argc, char * argv[])
 {
-  // 初始化ROS并新建节点
   rclcpp::init(argc, argv);
-
-  global_node = std::make_shared<rclcpp::Node>("arm_moveit_read");
-
-  // 创建发布者
-  auto publisher = global_node->create_publisher<robo_interfaces::msg::PositionOrientation>(
-    "real_position_orientation", 10);
-    
-  // 创建GripperCommand消息的发布者
-  gripper_publisher = global_node->create_publisher<robo_interfaces::msg::GripperCommand>(
-    "real_gripper_command", 10);
-    
-  // 创建joint_states话题的订阅者
-  auto joint_states_subscriber = global_node->create_subscription<sensor_msgs::msg::JointState>(
-    "joint_states", 10, joint_states_callback);
-
-  // 使用异步执行器来处理ROS消息回调
+  // 使用 MultiThreadedExecutor 确保 MoveIt 的后台服务（TF监听等）不被阻塞
+  auto node = std::make_shared<ArmMoveitRead>();
   rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(global_node);
-
-  // 启动异步执行器线程
-  std::thread executor_thread([&executor]() {
-    executor.spin();
-  });
-
-  // 打印启动日志
-  RCLCPP_INFO(global_node->get_logger(), "ArmMoveitRead node started");
-
-  // 初始化 MoveGroupInterface
-  auto move_group_interface = MoveGroupInterface(global_node, "arm");
-  move_group_interface.allowReplanning(true);
-
-  // 主循环
-  while (rclcpp::ok())
-  {
-    // 设置循环频率为1Hz
-    rclcpp::Rate rate(100);
-    
-    // 获取当前位姿
-    auto get_pose = move_group_interface.getCurrentPose();
-
-    // 创建消息并填充数据
-    auto message = robo_interfaces::msg::PositionOrientation();
-    message.position_x = get_pose.pose.position.x;
-    message.position_y = get_pose.pose.position.y;
-    message.position_z = get_pose.pose.position.z;
-    message.orientation_x = get_pose.pose.orientation.x;
-    message.orientation_y = get_pose.pose.orientation.y;
-    message.orientation_z = get_pose.pose.orientation.z;
-    message.orientation_w = get_pose.pose.orientation.w;
-
-    // 发布消息
-    publisher->publish(message);
-
-    // 打印合并的日志信息
-    // RCLCPP_INFO(global_node->get_logger(),
-    //             "position = x:%.3f, y:%.3f, z:%.3f / orientation = x:%.3f, y:%.3f, z:%.3f, w:%.3f / Joint7_left: %.2f radians (%.2f degrees) - Gripper: %s",
-    //             get_pose.pose.position.x, get_pose.pose.position.y, get_pose.pose.position.z,
-    //             get_pose.pose.orientation.x, get_pose.pose.orientation.y,
-    //             get_pose.pose.orientation.z, get_pose.pose.orientation.w,
-    //             g_joint7_left_radians, g_joint7_left_degrees, g_gripper_state.c_str());
-    
-    // 按照设定的频率休眠
-    rate.sleep();
-  }
-
-  // 停止异步执行器
-  executor.cancel(); // 取消所有待处理的回调
-  executor_thread.join();  // 等待异步线程结束
-
-  // 关闭ROS 
+  executor.add_node(node);
+  executor.spin();
   rclcpp::shutdown();
   return 0;
 }

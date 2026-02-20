@@ -156,29 +156,15 @@ ros2 launch cello_moveit_config moveit_write_read.launch.py
 src/arm_moveit_write/src/topic_publisher.cpp
 
 ```cpp
-    // viola
-    // dataset1_ = {
-    //   {0.35, -0.00, 0.23},       // position
-    //   {-0.499, 0.500, -0.500, 0.500}, // orientation
-    //   "open"                         // gripper_state
-    // };
-    // dataset2_ = {
-    //   {0.15, -0.00, 0.299},        // position
-    //   {0.500, -0.500, 0.500, -0.499},   // orientation
-    //   "close"                        // gripper_state
-    // };
+    //Viola
+    // targets_.push_back({"Viola Start",{0.351, 0.000, 0.233},{0.506, -0.504, 0.494, -0.493},"open"});//点位 1（Viola Start）
+    // targets_.push_back({"Viola Home",{0.126, -0.000, 0.276},{0.502, -0.501, 0.498, -0.498},"close"});//点位 2（Viola Home）
 
-    //cello
-    dataset1_ = {
-      {0.278, 0.000, 0.438},       // position
-      {-0.506, 0.507, -0.496, 0.491}, // orientation
-      "open"                         // gripper_state
-    };
-    dataset2_ = {
-      {0.479, -0.000, 0.369},        // position
-      {-0.506, 0.507, -0.496, 0.491}, // orientation
-      "close"                        // gripper_state
-    };
+    //Cello
+    targets_.push_back({"Cello Start",{0.330, -0.324, 0.074},{0.523, -0.520, 0.477, -0.475},"open"});// 点位 1 (Cello Start)
+    targets_.push_back({"Cello right",{0.529, 0.113, 0.246},{0.523, -0.520, 0.477, -0.475},"close"});// 点位 2 (Cello right)
+    targets_.push_back({"Cello up",{0.278, 0.000, 0.438},{-0.506, 0.507, -0.496, 0.491},"open"});// 点位 3 (Cello up)
+    targets_.push_back({"Cello Home",{0.479, -0.000, 0.369},{-0.506, 0.507, -0.496, 0.491},"close"});// 点位 4 (Cello Home)
 
 ```
 

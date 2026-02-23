@@ -15,10 +15,23 @@ def generate_launch_description():
     pkg_share = get_package_share_directory("cello_moveit_config")
     ros2_controllers_path = os.path.join(pkg_share, "config", "ros2_controllers.yaml")
     servo_params_path = os.path.join(pkg_share, "config", "moveit_servo.yaml")
+    pose_tracking_params_path = os.path.join(
+        pkg_share, "config", "pose_tracking_settings.yaml"
+    )
+    rviz_config_path = os.path.join(pkg_share, "config", "moveit.rviz")
+
     with open(servo_params_path, "r", encoding="utf-8") as f:
         servo_yaml = yaml.safe_load(f) or {}
-    servo_params = {"moveit_servo": servo_yaml}
-    rviz_config_path = os.path.join(pkg_share, "config", "moveit.rviz")
+    with open(pose_tracking_params_path, "r", encoding="utf-8") as f:
+        pose_tracking_yaml = yaml.safe_load(f) or {}
+
+    # PoseTracking publishes metric twists (m/s, rad/s), so Servo input must be speed_units.
+    servo_yaml["command_in_type"] = "speed_units"
+
+    # PoseTracking PID params must be in the same moveit_servo namespace.
+    merged_servo_params = dict(servo_yaml)
+    merged_servo_params.update(pose_tracking_yaml)
+    servo_params = {"moveit_servo": merged_servo_params}
 
     ros2_control_node = Node(
         package="controller_manager",
@@ -41,16 +54,52 @@ def generate_launch_description():
         parameters=[moveit_config.robot_description],
     )
 
-    servo_node = Node(
-        package="moveit_servo",
-        executable="servo_node_main",
-        name="servo_node",
+    pose_tracking_node = Node(
+        package="cello_servo_pose_tracking",
+        executable="xr_pose_tracking_node",
+        name="xr_pose_tracking",
         output="screen",
         parameters=[
             moveit_config.robot_description,
             moveit_config.robot_description_semantic,
             moveit_config.robot_description_kinematics,
             servo_params,
+            {
+                "use_sim_time": True,
+                "position_tolerance": 0.005,
+                "orientation_tolerance": 0.01,
+                "target_pose_timeout": 0.25,
+                "enable_startup_home": True,
+                "home_joint_names": [
+                    "joint1",
+                    "joint2",
+                    "joint3",
+                    "joint4",
+                    "joint5",
+                    "joint6",
+                ],
+                "home_joint_positions": [0.1, -0.8, 0.8, -0.7, 0.5, 0.2],
+                "home_trajectory_time_sec": 2.,
+            },
+        ],
+    )
+
+    wrist_to_target_node = Node(
+        package="cello_servo_pose_tracking",
+        executable="wrist_tf_to_target_pose_node",
+        name="wrist_tf_to_target_pose",
+        output="screen",
+        parameters=[
+            {
+                "use_sim_time": True,
+                "world_frame": "world",
+                "wrist_frame": "right_wrist",
+                "ee_frame": merged_servo_params.get("ee_frame_name", "link6"),
+                "output_topic": "/xr_target_pose",
+                "publish_rate_hz": 50.0,
+                "reset_on_time_jump": True,
+                "time_jump_threshold_sec": 1.0,
+            }
         ],
     )
 
@@ -73,7 +122,8 @@ def generate_launch_description():
             robot_state_publisher,
             ros2_control_node,
             controllers_spawner,
-            servo_node,
+            pose_tracking_node,
+            wrist_to_target_node,
             rviz_node,
         ]
     )

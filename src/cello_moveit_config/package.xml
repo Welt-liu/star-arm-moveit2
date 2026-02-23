@@ -32,6 +32,7 @@
   <!-- <exec_depend>gazebo_ros_control</exec_depend> -->
   <exec_depend>cello_description</exec_depend>
   <exec_depend>controller_manager</exec_depend>
+  <exec_depend>ros2controlcli</exec_depend>
   <exec_depend>moveit_configs_utils</exec_depend>
   <exec_depend>moveit_ros_move_group</exec_depend>
   <exec_depend>moveit_ros_visualization</exec_depend>

@@ -8,7 +8,7 @@ use_gazebo: false
 command_in_type: "unitless"
 scale:
   # Max linear velocity. Unit is [m/s].
-  linear: 0.10
+  linear: 0.40
   # Max angular velocity. Unit is [rad/s].
   rotational: 0.25
   # Max joint angular/linear velocity.
@@ -37,8 +37,8 @@ incoming_command_timeout: 0.1
 num_outgoing_halt_msgs_to_publish: 4
 
 ## Configure handling of singularities and joint limits
-lower_singularity_threshold: 17.0
-hard_stop_singularity_threshold: 30.0
+lower_singularity_threshold: 170.0
+hard_stop_singularity_threshold: 300.0
 joint_limit_margin: 0.1
 leaving_singularity_threshold_multiplier: 2.0
 
@@ -51,7 +51,7 @@ status_topic: ~/status
 command_out_topic: /arm_controller/joint_trajectory
 
 ## Collision checking
-check_collisions: true
+check_collisions: false
 collision_check_rate: 10.0
 self_collision_proximity_threshold: 0.01
 scene_collision_proximity_threshold: 0.02

@@ -26,17 +26,10 @@ def generate_launch_description():
         output="both",
     )
 
-    joint_state_broadcaster_spawner = Node(
+    controllers_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["joint_state_broadcaster", "-c", "/controller_manager"],
-        output="screen",
-    )
-
-    arm_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["arm_controller", "-c", "/controller_manager"],
+        arguments=["joint_state_broadcaster", "arm_controller", "-c", "/controller_manager"],
         output="screen",
     )
 
@@ -64,8 +57,7 @@ def generate_launch_description():
         [
             robot_state_publisher,
             ros2_control_node,
-            joint_state_broadcaster_spawner,
-            arm_controller_spawner,
+            controllers_spawner,
             servo_node,
         ]
     )

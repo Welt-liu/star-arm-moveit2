@@ -32,6 +32,9 @@ public:
     reset_on_forward_time_jump_ = declare_parameter<bool>("reset_on_forward_time_jump", false);
     time_jump_threshold_sec_ = declare_parameter<double>("time_jump_threshold_sec", 1.0);
     orientation_mode_ = declare_parameter<std::string>("orientation_mode", "full_offset");
+    translation_scale_x_ = declare_parameter<double>("translation_scale_x", 1.0);
+    translation_scale_y_ = declare_parameter<double>("translation_scale_y", 1.0);
+    translation_scale_z_ = declare_parameter<double>("translation_scale_z", 1.0);
     publish_markers_ = declare_parameter<bool>("publish_markers", true);
     marker_topic_ = declare_parameter<std::string>("marker_topic", "/xr_target_markers");
 
@@ -83,6 +86,8 @@ private:
     {
       wrist_to_ee_offset_tf_ = world_to_wrist_tf.inverse() * world_to_ee_tf;
       world_translation_offset_ = world_to_ee_tf.getOrigin() - world_to_wrist_tf.getOrigin();
+      calibrated_wrist_origin_ = world_to_wrist_tf.getOrigin();
+      calibrated_ee_origin_ = world_to_ee_tf.getOrigin();
       double wr, wp, wy;
       double er, ep, ey;
       tf2::Matrix3x3(world_to_wrist_tf.getRotation()).getRPY(wr, wp, wy);
@@ -114,8 +119,13 @@ private:
     {
       // Apply translation in world frame so source vertical motion remains world-vertical.
       // Keep target orientation equal to the current EE orientation (no orientation tracking).
+      const tf2::Vector3 wrist_delta_world = world_to_wrist_tf.getOrigin() - calibrated_wrist_origin_;
+      const tf2::Vector3 mapped_delta_world(
+          translation_scale_x_ * wrist_delta_world.x(),
+          translation_scale_y_ * wrist_delta_world.y(),
+          translation_scale_z_ * wrist_delta_world.z());
       world_to_target_tf = world_to_ee_tf;
-      world_to_target_tf.setOrigin(world_to_wrist_tf.getOrigin() + world_translation_offset_);
+      world_to_target_tf.setOrigin(calibrated_ee_origin_ + mapped_delta_world);
     }
     else
     {
@@ -216,8 +226,13 @@ private:
   bool reset_on_forward_time_jump_{ false };
   double time_jump_threshold_sec_{ 1.0 };
   std::string orientation_mode_;
+  double translation_scale_x_{ 1.0 };
+  double translation_scale_y_{ 1.0 };
+  double translation_scale_z_{ 1.0 };
   double yaw_offset_{ 0.0 };
   tf2::Vector3 world_translation_offset_{ 0.0, 0.0, 0.0 };
+  tf2::Vector3 calibrated_wrist_origin_{ 0.0, 0.0, 0.0 };
+  tf2::Vector3 calibrated_ee_origin_{ 0.0, 0.0, 0.0 };
   bool publish_markers_{ true };
   std::string marker_topic_;
   bool calibrated_{ false };

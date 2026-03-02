@@ -7,6 +7,10 @@ Panels:
         - /MotionPlanning1
         - /MotionPlanning1/Planning Request1
         - /RobotModel1
+        - /TF1
+        - /TF1/Frames1
+        - /Pose1
+        - /Pose1/Topic1
       Splitter Ratio: 0.5
     Tree Height: 342
   - Class: rviz_common/Help
@@ -304,6 +308,79 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /xr_target_markers
       Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        base_link:
+          Value: false
+        left_wrist:
+          Value: false
+        link1:
+          Value: false
+        link2:
+          Value: false
+        link3:
+          Value: false
+        link4:
+          Value: false
+        link5:
+          Value: false
+        link6:
+          Value: true
+        link7_left:
+          Value: false
+        link7_right:
+          Value: false
+        right_wrist:
+          Value: true
+        world:
+          Value: false
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        world:
+          base_link:
+            link1:
+              link2:
+                link3:
+                  link4:
+                    link5:
+                      link6:
+                        link7_left:
+                          {}
+                        link7_right:
+                          {}
+          left_wrist:
+            {}
+          right_wrist:
+            {}
+      Update Interval: 0
+      Value: true
+    - Alpha: 1
+      Axes Length: 0.10000000149011612
+      Axes Radius: 0.009999999776482582
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.05000000074505806
+      Head Radius: 0.029999999329447746
+      Name: Pose
+      Shaft Length: 0.10000000149011612
+      Shaft Radius: 0.009999999776482582
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /xr_target_pose
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -322,7 +399,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.4662774801254272
+      Distance: 2.8303778171539307
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -337,10 +414,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9549990296363831
+      Pitch: 0.6902033090591431
       Target Frame: base_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.310169219970703
+      Yaw: 4.238862037658691
     Saved: ~
 Window Geometry:
   Displays:

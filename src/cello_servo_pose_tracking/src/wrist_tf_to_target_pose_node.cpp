@@ -8,6 +8,8 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Transform.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -27,7 +29,9 @@ public:
     output_topic_ = declare_parameter<std::string>("output_topic", "/xr_target_pose");
     publish_rate_hz_ = declare_parameter<double>("publish_rate_hz", 50.0);
     reset_on_time_jump_ = declare_parameter<bool>("reset_on_time_jump", true);
+    reset_on_forward_time_jump_ = declare_parameter<bool>("reset_on_forward_time_jump", false);
     time_jump_threshold_sec_ = declare_parameter<double>("time_jump_threshold_sec", 1.0);
+    orientation_mode_ = declare_parameter<std::string>("orientation_mode", "full_offset");
     publish_markers_ = declare_parameter<bool>("publish_markers", true);
     marker_topic_ = declare_parameter<std::string>("marker_topic", "/xr_target_markers");
 
@@ -45,7 +49,7 @@ private:
     if (have_last_time_ && reset_on_time_jump_)
     {
       const double dt = (current_time - last_time_).seconds();
-      if (dt < -1e-3 || dt > time_jump_threshold_sec_)
+      if (dt < -1e-3 || (reset_on_forward_time_jump_ && dt > time_jump_threshold_sec_))
       {
         calibrated_ = false;
         RCLCPP_WARN(
@@ -78,14 +82,46 @@ private:
     if (!calibrated_)
     {
       wrist_to_ee_offset_tf_ = world_to_wrist_tf.inverse() * world_to_ee_tf;
+      world_translation_offset_ = world_to_ee_tf.getOrigin() - world_to_wrist_tf.getOrigin();
+      double wr, wp, wy;
+      double er, ep, ey;
+      tf2::Matrix3x3(world_to_wrist_tf.getRotation()).getRPY(wr, wp, wy);
+      tf2::Matrix3x3(world_to_ee_tf.getRotation()).getRPY(er, ep, ey);
+      yaw_offset_ = std::atan2(std::sin(ey - wy), std::cos(ey - wy));
       calibrated_ = true;
       RCLCPP_INFO(
           get_logger(),
-          "Calibrated wrist->ee offset using startup transforms (%s -> %s, ee=%s)",
-          world_frame_.c_str(), wrist_frame_.c_str(), ee_frame_.c_str());
+          "Calibrated wrist->ee offset using startup transforms (%s -> %s, ee=%s), orientation_mode=%s",
+          world_frame_.c_str(), wrist_frame_.c_str(), ee_frame_.c_str(), orientation_mode_.c_str());
     }
 
-    const tf2::Transform world_to_target_tf = world_to_wrist_tf * wrist_to_ee_offset_tf_;
+    tf2::Transform world_to_target_tf;
+    if (orientation_mode_ == "source_rp_yaw_offset")
+    {
+      // Keep source wrist orientation, then apply a constant yaw offset in world frame.
+      // This avoids Euler-angle singularities and preserves source roll/pitch behavior.
+      tf2::Quaternion q_world_yaw_offset;
+      q_world_yaw_offset.setRPY(0.0, 0.0, yaw_offset_);
+      const tf2::Quaternion target_q = q_world_yaw_offset * world_to_wrist_tf.getRotation();
+
+      // In this mode, keep calibrated translation offset while only orientation gets yaw offset.
+      // Translation offset is applied in the wrist frame, so it follows wrist motion.
+      tf2::Transform translation_only_offset(tf2::Quaternion::getIdentity(), wrist_to_ee_offset_tf_.getOrigin());
+      world_to_target_tf = world_to_wrist_tf * translation_only_offset;
+      world_to_target_tf.setRotation(target_q);
+    }
+    else if (orientation_mode_ == "world_translation_only")
+    {
+      // Apply translation in world frame so source vertical motion remains world-vertical.
+      // Keep target orientation equal to the current EE orientation (no orientation tracking).
+      world_to_target_tf = world_to_ee_tf;
+      world_to_target_tf.setOrigin(world_to_wrist_tf.getOrigin() + world_translation_offset_);
+    }
+    else
+    {
+      // Default behavior: preserve full 6D offset calibrated at startup.
+      world_to_target_tf = world_to_wrist_tf * wrist_to_ee_offset_tf_;
+    }
 
     geometry_msgs::msg::PoseStamped target_pose;
     target_pose.header.stamp = now();
@@ -177,7 +213,11 @@ private:
   std::string output_topic_;
   double publish_rate_hz_{ 50.0 };
   bool reset_on_time_jump_{ true };
+  bool reset_on_forward_time_jump_{ false };
   double time_jump_threshold_sec_{ 1.0 };
+  std::string orientation_mode_;
+  double yaw_offset_{ 0.0 };
+  tf2::Vector3 world_translation_offset_{ 0.0, 0.0, 0.0 };
   bool publish_markers_{ true };
   std::string marker_topic_;
   bool calibrated_{ false };

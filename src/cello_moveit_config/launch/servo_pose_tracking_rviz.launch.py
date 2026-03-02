@@ -3,11 +3,15 @@ import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def generate_launch_description():
+    use_sim_time = LaunchConfiguration("use_sim_time")
+
     moveit_config = MoveItConfigsBuilder(
         "cello_description", package_name="cello_moveit_config"
     ).to_moveit_configs()
@@ -65,11 +69,17 @@ def generate_launch_description():
             moveit_config.robot_description_kinematics,
             servo_params,
             {
-                "use_sim_time": True,
+                "use_sim_time": use_sim_time,
                 "position_tolerance": 0.005,
                 "orientation_tolerance": 0.01,
-                "target_pose_timeout": 0.25,
+                "target_pose_timeout": 0.75,
                 "enable_startup_home": True,
+                "control_x_translation": merged_servo_params.get("control_x_translation", True),
+                "control_y_translation": merged_servo_params.get("control_y_translation", True),
+                "control_z_translation": merged_servo_params.get("control_z_translation", True),
+                "control_x_rotation": merged_servo_params.get("control_x_rotation", True),
+                "control_y_rotation": merged_servo_params.get("control_y_rotation", True),
+                "control_z_rotation": merged_servo_params.get("control_z_rotation", True),
                 "home_joint_names": [
                     "joint1",
                     "joint2",
@@ -91,14 +101,20 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "use_sim_time": True,
+                "use_sim_time": use_sim_time,
                 "world_frame": "world",
                 "wrist_frame": "right_wrist",
                 "ee_frame": merged_servo_params.get("ee_frame_name", "link6"),
                 "output_topic": "/xr_target_pose",
                 "publish_rate_hz": 50.0,
                 "reset_on_time_jump": True,
+                "reset_on_forward_time_jump": False,
                 "time_jump_threshold_sec": 1.0,
+                "orientation_mode": "world_translation_only",
+                # "orientation_mode": "full_offset",
+                # "orientation_mode": "source_rp_yaw_offset",
+                "publish_markers": True,
+                "marker_topic": "/xr_target_markers",
             }
         ],
     )
@@ -119,6 +135,11 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "use_sim_time",
+                default_value="false",
+                description="Use ROS /clock time instead of system time",
+            ),
             robot_state_publisher,
             ros2_control_node,
             controllers_spawner,

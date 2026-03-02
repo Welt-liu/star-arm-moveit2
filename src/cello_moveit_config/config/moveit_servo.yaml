@@ -8,11 +8,11 @@ use_gazebo: false
 command_in_type: "unitless"
 scale:
   # Max linear velocity. Unit is [m/s].
-  linear: 0.40
+  linear: 0.80
   # Max angular velocity. Unit is [rad/s].
-  rotational: 0.25
+  rotational: 0.80
   # Max joint angular/linear velocity.
-  joint: 0.50
+  joint: 1.00
 
 ## Properties of outgoing commands
 publish_period: 0.02
@@ -32,6 +32,14 @@ planning_frame: world
 ee_frame_name: link6
 robot_link_command_frame: link6
 
+## Pose tracking control dimensions (used by xr_pose_tracking_node)
+control_x_translation: true
+control_y_translation: true
+control_z_translation: true
+control_x_rotation: true
+control_y_rotation: true
+control_z_rotation: true
+
 ## Stopping behaviour
 incoming_command_timeout: 0.1
 num_outgoing_halt_msgs_to_publish: 4
@@ -39,7 +47,7 @@ num_outgoing_halt_msgs_to_publish: 4
 ## Configure handling of singularities and joint limits
 lower_singularity_threshold: 170.0
 hard_stop_singularity_threshold: 300.0
-joint_limit_margin: 0.1
+joint_limit_margin: 0.03
 leaving_singularity_threshold_multiplier: 2.0
 
 ## Topic names

@@ -1,12 +1,15 @@
 #include <chrono>
 #include <cstdint>
 #include <atomic>
+#include <cmath>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <moveit_msgs/srv/change_control_dimensions.hpp>
 #include <moveit_msgs/srv/change_drift_dimensions.hpp>
@@ -60,10 +63,13 @@ int main(int argc, char** argv)
 
   const bool zero_stamp_means_now = node->declare_parameter("zero_stamp_means_now", true);
   std::atomic<bool> got_first_target_pose{ false };
+  std::mutex last_target_mutex;
+  geometry_msgs::msg::PoseStamped last_target_pose;
+  bool have_last_target_pose = false;
   auto target_pose_pub = node->create_publisher<geometry_msgs::msg::PoseStamped>("target_pose", rclcpp::SensorDataQoS());
   auto xr_target_pose_sub = node->create_subscription<geometry_msgs::msg::PoseStamped>(
       "/xr_target_pose", rclcpp::SensorDataQoS(),
-      [node, target_pose_pub, zero_stamp_means_now, &got_first_target_pose](
+      [node, target_pose_pub, zero_stamp_means_now, &got_first_target_pose, &last_target_mutex, &last_target_pose, &have_last_target_pose](
           const geometry_msgs::msg::PoseStamped::ConstSharedPtr& msg) {
         auto out = *msg;
         if (zero_stamp_means_now && out.header.stamp.sec == 0 && out.header.stamp.nanosec == 0)
@@ -71,6 +77,11 @@ int main(int argc, char** argv)
           out.header.stamp = node->get_clock()->now();
         }
         target_pose_pub->publish(out);
+        {
+          std::lock_guard<std::mutex> lock(last_target_mutex);
+          last_target_pose = out;
+          have_last_target_pose = true;
+        }
         got_first_target_pose.store(true);
       });
 
@@ -86,15 +97,21 @@ int main(int argc, char** argv)
       node->create_client<moveit_msgs::srv::ChangeControlDimensions>("change_control_dimensions");
   auto drift_dims_client =
       node->create_client<moveit_msgs::srv::ChangeDriftDimensions>("change_drift_dimensions");
+  const bool control_x_translation = node->declare_parameter("control_x_translation", true);
+  const bool control_y_translation = node->declare_parameter("control_y_translation", true);
+  const bool control_z_translation = node->declare_parameter("control_z_translation", true);
+  const bool control_x_rotation = node->declare_parameter("control_x_rotation", false);
+  const bool control_y_rotation = node->declare_parameter("control_y_rotation", false);
+  const bool control_z_rotation = node->declare_parameter("control_z_rotation", false);
   if (control_dims_client->wait_for_service(std::chrono::seconds(2)))
   {
     auto req = std::make_shared<moveit_msgs::srv::ChangeControlDimensions::Request>();
-    req->control_x_translation = true;
-    req->control_y_translation = true;
-    req->control_z_translation = true;
-    req->control_x_rotation = false;
-    req->control_y_rotation = false;
-    req->control_z_rotation = false;
+    req->control_x_translation = control_x_translation;
+    req->control_y_translation = control_y_translation;
+    req->control_z_translation = control_z_translation;
+    req->control_x_rotation = control_x_rotation;
+    req->control_y_rotation = control_y_rotation;
+    req->control_z_rotation = control_z_rotation;
     auto future = control_dims_client->async_send_request(req);
     if (future.wait_for(std::chrono::seconds(2)) == std::future_status::ready)
     {
@@ -166,6 +183,7 @@ int main(int argc, char** argv)
   rclcpp::WallRate retry_rate(20.0);
   moveit_servo::PoseTrackingStatusCode last_status = moveit_servo::PoseTrackingStatusCode::INVALID;
   auto last_log_time = node->now();
+  auto last_error_log_time = node->now();
   bool servo_unpaused = false;
 
   while (rclcpp::ok())
@@ -201,6 +219,57 @@ int main(int argc, char** argv)
     {
       break;
     }
+
+    // Debug: periodically print live EE->target error observed by this node.
+    if ((now - last_error_log_time).seconds() > 0.5)
+    {
+      geometry_msgs::msg::PoseStamped target_copy;
+      bool have_target = false;
+      {
+        std::lock_guard<std::mutex> lock(last_target_mutex);
+        if (have_last_target_pose)
+        {
+          target_copy = last_target_pose;
+          have_target = true;
+        }
+      }
+
+      if (have_target)
+      {
+        planning_scene_monitor::LockedPlanningSceneRO scene_lock(planning_scene_monitor);
+        const auto& current_state = scene_lock->getCurrentState();
+        const auto ee_tf = current_state.getGlobalLinkTransform(servo_parameters->ee_frame_name);
+
+        const Eigen::Vector3d ee_pos = ee_tf.translation();
+        const Eigen::Vector3d target_pos(
+            target_copy.pose.position.x, target_copy.pose.position.y, target_copy.pose.position.z);
+        const double pos_err = (target_pos - ee_pos).norm();
+
+        Eigen::Quaterniond q_ee(ee_tf.rotation());
+        Eigen::Quaterniond q_target(
+            target_copy.pose.orientation.w,
+            target_copy.pose.orientation.x,
+            target_copy.pose.orientation.y,
+            target_copy.pose.orientation.z);
+        q_ee.normalize();
+        q_target.normalize();
+        const double dot = std::abs(q_ee.dot(q_target));
+        const double ori_err = 2.0 * std::acos(std::min(1.0, std::max(-1.0, dot)));
+
+        RCLCPP_INFO(
+            node->get_logger(),
+            "Debug error | frame=%s ee=%s pos_err=%.4f m ori_err=%.4f rad target_xyz=[%.3f %.3f %.3f] ee_xyz=[%.3f %.3f %.3f] status=%s",
+            target_copy.header.frame_id.c_str(),
+            servo_parameters->ee_frame_name.c_str(),
+            pos_err,
+            ori_err,
+            target_pos.x(), target_pos.y(), target_pos.z(),
+            ee_pos.x(), ee_pos.y(), ee_pos.z(),
+            moveit_servo::POSE_TRACKING_STATUS_CODE_MAP.at(status).c_str());
+      }
+      last_error_log_time = now;
+    }
+
     // When no fresh target pose is available, loop at a controlled retry rate.
     if (status == moveit_servo::PoseTrackingStatusCode::NO_RECENT_TARGET_POSE ||
         status == moveit_servo::PoseTrackingStatusCode::NO_RECENT_END_EFFECTOR_POSE)

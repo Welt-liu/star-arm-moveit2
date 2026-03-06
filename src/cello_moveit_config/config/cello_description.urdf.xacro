@@ -1,6 +1,17 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="cello_description">
+
+    <!-- Arguments -->
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+
+    <xacro:arg name="launch_camera" default="false" />
+    <xacro:arg name="camera_type" default="realsense" />
+    <xacro:arg name="camera_pos_x" default="0.25" />
+    <xacro:arg name="camera_pos_y" default="0.0" />
+    <xacro:arg name="camera_pos_z" default="0.4" />
+    <xacro:arg name="camera_pos_roll" default="0.0" />
+    <xacro:arg name="camera_pos_pitch" default="1.57079633" />
+    <xacro:arg name="camera_pos_yaw" default="3.14159265" />
 
     <!-- Import cello_description urdf file -->
     <xacro:include filename="$(find cello_description)/urdf/cello_description.urdf" />
@@ -8,7 +19,20 @@
     <!-- Import control_xacro -->
     <xacro:include filename="cello_description.ros2_control.xacro" />
 
-
     <xacro:cello_description_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
+
+    <!-- Conditionally include control if not GUI -->
+    <xacro:if value="$(eval launch_camera)">
+        <xacro:include filename="$(find cello_moveit_config)/config/camera_with_stand.xacro"/>
+        <xacro:camera_with_stand camera_pos_z="$(arg camera_pos_z)" camera_type="$(arg camera_type)" />
+
+        <!-- Connect camera to robot base -->
+        <joint name="base_link_camera_base_joint" type="fixed">
+            <parent link="base_link"/>
+            <child link="camera_base_link"/>
+            <origin xyz="$(arg camera_pos_x) $(arg camera_pos_y) $(arg camera_pos_z)" 
+                    rpy="$(arg camera_pos_roll) $(arg camera_pos_pitch) $(arg camera_pos_yaw)"/>
+        </joint>
+    </xacro:if>
 
 </robot>

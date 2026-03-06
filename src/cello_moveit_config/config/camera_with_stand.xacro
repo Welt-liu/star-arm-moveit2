@@ -1,0 +1,110 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro" >
+
+    <xacro:macro name="camera_with_stand" params="camera_pos_z camera_type:=realsense">
+        <!-- Variables -->
+        <xacro:property name="pi_val" value="3.1415926535"/>
+
+        <!-- Materials -->
+        <material name="gray">
+            <color rgba="0.5 0.5 0.5 1" />
+        </material>
+
+        <!-- Include realsense urdf macro -->
+        <xacro:if value="${camera_type == 'realsense'}">
+            <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+        </xacro:if>
+
+        <!-- Links -->
+        <link name="camera_base_link"/>
+
+        <xacro:if value="${camera_type != 'realsense'}">
+            <link name="camera_link">
+                <visual>
+                    <origin xyz="0 0 -0.015" rpy="0 0 0"/>
+                    <geometry>
+                        <cylinder radius="0.03" length="0.03"/>
+                    </geometry>
+                    <material name="gray"/>
+                </visual>
+            </link>
+        </xacro:if>
+
+        <link name="camera_holder_upper_arm_link">
+            <visual>
+                <origin xyz="0.015 0 -0.15" rpy="0 0 0"/>
+                <geometry>
+                    <box size="0.03 0.03 0.3"/>
+                </geometry>
+                <material name="gray"/>
+            </visual>
+            <collision>
+                <origin xyz="0 0 -0.15" rpy="0 0 0"/>
+                <geometry>
+                    <box size="0.03 0.03 0.3"/>
+                </geometry>
+            </collision>
+        </link>
+
+        <link name="camera_holder_lower_arm_link">
+            <visual>
+                <origin xyz="${camera_pos_z/2} 0 0.015" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${camera_pos_z} 0.03 0.03"/>
+                </geometry>
+                <material name="gray"/>
+            </visual>
+            <collision>
+                <origin xyz="${camera_pos_z/2} 0 0.015" rpy="0 0 0"/>
+                <geometry>
+                    <box size="${camera_pos_z} 0.03 0.03"/>
+                </geometry>
+            </collision>
+        </link>
+
+        <link name="camera_holder_base">
+            <visual>
+                <geometry>
+                    <cylinder radius="0.08" length="0.01" />
+                </geometry>
+                <origin xyz="0 0 -0.005" rpy="0 0 0" />
+                <material name="gray" />
+            </visual>
+        </link>
+
+
+        <!-- Joints -->
+        <xacro:if value="${camera_type == 'realsense'}">
+            <xacro:sensor_d435i parent="camera_base_link" use_nominal_extrinsics="true" >
+                <origin xyz="0.0095 0 -0.0125" rpy="0 0 0"/>
+            </xacro:sensor_d435i>
+        </xacro:if>
+
+        <xacro:if value="${camera_type != 'realsense'}">
+            <joint name="camera_base_to_camera_joint" type="fixed">
+                <parent link="camera_base_link"/>
+                <child link="camera_link"/>
+                <origin xyz="0 0 0" rpy="0 ${pi_val/2} 0"/>
+            </joint>
+        </xacro:if>
+        
+        <joint name="camera_base_to_upper_arm_joint" type="fixed">
+            <parent link="camera_base_link"/>
+            <child link="camera_holder_upper_arm_link"/>
+            <origin xyz="-0.03 0 0.0125" rpy="0 0 0"/>
+        </joint>
+
+        <joint name="camera_holder_upper_arm_to_camera_holder_lower_arm_joint" type="fixed">
+            <parent link="camera_holder_upper_arm_link"/>
+            <child link="camera_holder_lower_arm_link"/>
+            <origin xyz="0.03 0 -0.3" rpy="0 0 0"/>
+        </joint>
+
+        <joint name="camera_holder_lower_arm_to_camera_holder_base_joint" type="fixed">
+            <parent link="camera_holder_lower_arm_link"/>
+            <child link="camera_holder_base"/>
+            <origin xyz="${camera_pos_z} 0 0.015" rpy="0 ${pi_val/2} 0"/>
+        </joint>
+    </xacro:macro>
+
+</robot>

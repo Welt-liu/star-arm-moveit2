@@ -1,7 +1,9 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://ros.org/wiki/xacro" >
 
-    <xacro:macro name="camera_with_stand" params="camera_pos_z camera_type:=realsense">
+    <xacro:macro name="camera_with_stand" params="camera_pos_z 
+                                                  camera_roll:=0.0 camera_pitch:=0.0 camera_yaw:=0.0 
+                                                  camera_type:=realsense">
         <!-- Variables -->
         <xacro:property name="pi_val" value="3.1415926535"/>
 
@@ -16,6 +18,8 @@
         </xacro:if>
 
         <!-- Links -->
+        <link name="camera_mount_link"/>
+
         <link name="camera_base_link"/>
 
         <xacro:if value="${camera_type != 'realsense'}">
@@ -74,6 +78,12 @@
 
 
         <!-- Joints -->
+        <joint name="camera_mount_camera_base_joint" type="fixed">
+            <parent link="camera_mount_link"/>
+            <child link="camera_base_link"/>
+            <origin xyz="0 0 0" rpy="${camera_roll} ${camera_pitch} ${camera_yaw}"/>
+        </joint>
+
         <xacro:if value="${camera_type == 'realsense'}">
             <xacro:sensor_d435i parent="camera_base_link" use_nominal_extrinsics="true" >
                 <origin xyz="0.0095 0 -0.0125" rpy="0 0 0"/>
@@ -89,9 +99,9 @@
         </xacro:if>
         
         <joint name="camera_base_to_upper_arm_joint" type="fixed">
-            <parent link="camera_base_link"/>
+            <parent link="camera_mount_link"/>
             <child link="camera_holder_upper_arm_link"/>
-            <origin xyz="-0.03 0 0.0125" rpy="0 0 0"/>
+            <origin xyz="-0.0125 0 0.03" rpy="${pi_val} ${pi_val/2} 0"/>
         </joint>
 
         <joint name="camera_holder_upper_arm_to_camera_holder_lower_arm_joint" type="fixed">

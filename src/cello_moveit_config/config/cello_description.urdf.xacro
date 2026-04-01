@@ -4,11 +4,11 @@
     <!-- Arguments -->
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
 
-    <xacro:arg name="launch_camera" default="false" />
+    <xacro:arg name="launch_camera" default="true" />
     <xacro:arg name="camera_type" default="realsense" />
-    <xacro:arg name="camera_pos_x" default="0.25" />
+    <xacro:arg name="camera_pos_x" default="0.4" />
     <xacro:arg name="camera_pos_y" default="0.0" />
-    <xacro:arg name="camera_pos_z" default="0.4" />
+    <xacro:arg name="camera_pos_z" default="0.68" />
     <xacro:arg name="camera_pos_roll" default="0.0" />
     <xacro:arg name="camera_pos_pitch" default="1.57079633" />
     <xacro:arg name="camera_pos_yaw" default="3.14159265" />
@@ -24,14 +24,16 @@
     <!-- Conditionally include control if not GUI -->
     <xacro:if value="$(eval launch_camera)">
         <xacro:include filename="$(find cello_moveit_config)/config/camera_with_stand.xacro"/>
-        <xacro:camera_with_stand camera_pos_z="$(arg camera_pos_z)" camera_type="$(arg camera_type)" />
+        <xacro:camera_with_stand camera_pos_z="$(arg camera_pos_z)" 
+                                 camera_roll="$(arg camera_pos_roll)" camera_pitch="$(arg camera_pos_pitch)" camera_yaw="$(arg camera_pos_yaw)" 
+                                 camera_type="$(arg camera_type)" />
 
         <!-- Connect camera to robot base -->
-        <joint name="base_link_camera_base_joint" type="fixed">
+        <joint name="base_link_camera_mount_joint" type="fixed">
             <parent link="base_link"/>
-            <child link="camera_base_link"/>
+            <child link="camera_mount_link"/>
             <origin xyz="$(arg camera_pos_x) $(arg camera_pos_y) $(arg camera_pos_z)" 
-                    rpy="$(arg camera_pos_roll) $(arg camera_pos_pitch) $(arg camera_pos_yaw)"/>
+                    rpy="0 0 0"/>
         </joint>
     </xacro:if>
 

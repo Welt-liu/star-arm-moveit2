@@ -160,9 +160,10 @@ class Arm_contorl(Node):
         for i in range(len(msg.servo_id)):
             id = msg.servo_id[i]
             self.target_angle[id] = int(10*msg.target_angle[i])
-            if int(msg.time[i]) < 40:
-                (msg.time[i]) = 40
-            self.interval[id] = int(msg.time[i])+400
+            t = int(msg.time[i])
+            if t < 40:
+                t = 40
+            self.interval[id] = t+400
 
             self.arm_move_by_time()
 

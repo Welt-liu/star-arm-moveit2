@@ -121,6 +121,8 @@ class RoboActionClient(Node):
                 idx = ROBO_TYPE_1_INDEX_JOINT_[name]
                 msg.target_angle[idx] = jointstate2servoangle(idx, angle)
             self.set_angle_publisher.publish(msg)  # 发布命令 / publish command
+            duration = max(tfs - self.last_time, 0.1)
+            wait_time = duration + 0.5
             time.sleep(duration)  # 等待完成 / wait
         # 完成后返回成功 / succeed goal
         goal_handle.succeed()

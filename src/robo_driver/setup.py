@@ -22,6 +22,7 @@ setup(
     entry_points={
         "console_scripts": [
             "driver = robo_driver.robo_driver:main",
+            "relax_servos = robo_driver.relax_servos:main",
             # "driver4rviz = robo_driver.rviz_driver_demo:main",
         ],
     },

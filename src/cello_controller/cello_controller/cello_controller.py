@@ -132,17 +132,35 @@ class RoboActionClient(Node):
         return CancelResponse.ACCEPT
 
     def gripper_execute_callback(self, goal_handle):
-        """执行夹爪命令 / execute gripper command"""
+        """执行夹爪命令 / execute gripper command
+
+        Previously this callback returned success the instant the SetAngle
+        message was published, before the servo had physically moved.
+        Clients issuing rapid open/close sequences would see their commands
+        overwritten on the hardware bus with no visible motion even though
+        every action reported success.
+
+        Now: wait travel_time_ms + buffer for the servo to settle, and
+        populate the result fields so reached_goal/position are meaningful.
+        """
         pos = goal_handle.request.command.position
+        travel_time_ms = 1000
         # 构造单舵机 SetAngle / build single servo command
         msg = SetAngle(
             servo_id=[6],
             target_angle=[jointstate2servoangle(6, pos)],
-            time=[1000],
+            time=[travel_time_ms],
         )
         self.set_angle_publisher.publish(msg)
+        # Wait for the servo to physically reach the commanded angle.
+        time.sleep(travel_time_ms / 1000.0 + 0.1)
+        result = GripperCommand.Result()
+        result.position = float(pos)
+        result.effort = 0.0
+        result.stalled = False
+        result.reached_goal = True
         goal_handle.succeed()
-        return GripperCommand.Result()
+        return result
 
 
 def main(args=None):

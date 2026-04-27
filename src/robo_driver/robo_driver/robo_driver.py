@@ -18,11 +18,8 @@ import serial
 ROBO_DRIVER_NODE = "robo_driver_node"  # 驱动节点名称 / driver node name
 ROBO_SET_ANGLE_SUBSCRIBER = "set_angle_topic"  # 设置角度话题 / topic for setting angles
 
-# PORT_NAME: 设置舵机串口号，默认使用/dev/ttyUSB0，当需要在同一个设备上使用多个机械臂时，需要修改该参数
-# Port name: Serial port for servos, default "/dev/ttyUSB0", change when using multiple arms
-# Whether to check servo angle on power-up, default True to ensure consistent init
-SERVO_PORT_NAME = "/dev/ttyUSB0"  # 舵机串口号 <<< 修改为实际串口号
-                                # Servo serial port <<< modify to actual port name
+# Port name: Servo serial port, defaults to "/dev/ttyUSB0" but can be overridden by ROS parameter
+DEFAULT_SERVO_PORT_NAME = "/dev/ttyUSB0"
 SERVO_BAUDRATE = 1000000  # 舵机的波特率 / Servo communication baud rate
 servo_ids = list()
 
@@ -48,15 +45,23 @@ class uservo_ex:
 
 
     # 参数 / Parameters:
-    def __init__(self,robo_type,log = None):
+    def __init__(self, robo_type, servo_port_name, log=None):
         self.ROBO_TYPE = robo_type
         self.INDEX_JOINT_ = {value: index for index, value in enumerate(self.JOINT_)}
         self.log = log
+        self.servo_port_name = servo_port_name
         # 初始化串口 / Initialize serial port
         try:
-            self.uart = serial.Serial(port=SERVO_PORT_NAME,baudrate=SERVO_BAUDRATE,parity=serial.PARITY_NONE,stopbits=1,bytesize=8,timeout=0)
+            self.uart = serial.Serial(
+                port=self.servo_port_name,
+                baudrate=SERVO_BAUDRATE,
+                parity=serial.PARITY_NONE,
+                stopbits=1,
+                bytesize=8,
+                timeout=0,
+            )
         except serial.SerialException as e:
-            if self.log != None:
+            if self.log is not None:
                 self.log.error(f"{e}")
             raise ValueError(f"串口初始化失败: {e}")  # Serial port init failed
         try:
@@ -121,14 +126,19 @@ class Arm_contorl(Node):
     def __init__(self):
         super().__init__(ROBO_DRIVER_NODE)
         self.declare_parameter("robo_type", "robo")
-
-        self.declare_parameter('lock', 'enable')
+        self.declare_parameter("lock", "enable")
+        self.declare_parameter("servo_port_name", DEFAULT_SERVO_PORT_NAME)
 
         self.robo_type = (self.get_parameter("robo_type").get_parameter_value().string_value)
         self.lock = (self.get_parameter("lock").get_parameter_value().string_value)
+        self.servo_port_name = self.get_parameter("servo_port_name").get_parameter_value().string_value
 
         try:
-            self.Servo = uservo_ex(self.robo_type,log = self.get_logger())
+            self.Servo = uservo_ex(
+                self.robo_type,
+                self.servo_port_name,
+                log=self.get_logger(),
+            )
         except ValueError as e:
             raise
         self.target_angle = self.Servo.ZERO_ANGLE
@@ -149,6 +159,7 @@ class Arm_contorl(Node):
             SetAngle, ROBO_SET_ANGLE_SUBSCRIBER, self.set_angle_callback, 10
         )
         self.timer2 = self.create_timer(0.03, self.timer_callback)
+        self.get_logger().info(f"Using servo port: {self.servo_port_name}")
         self.get_logger().info(f"初始化完成 / Initialization complete")
 
     def node_close(self):

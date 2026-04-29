@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+    <!-- Materials -->
+    <material name="green">
+        <color rgba="0 0.8 0 1" />
+    </material>
+
+    <!-- Links -->
+    <xacro:macro name="calibration_board_holder" params="parent">
+        <link name="calibration_board_holder_link">
+            <visual>
+                <geometry>
+                    <box size="0.138 0.003 0.097"/>
+                </geometry>
+                <material name="green"/>
+                <origin xyz="0 0 0.0485" rpy="0 0 0"/>
+            </visual>
+        </link>
+
+        <link name="handeye_target_link" />
+
+        <!-- Joints -->
+        <joint name="${parent}_to_calibration_board_joint" type="fixed">
+            <parent link="${parent}"/>
+            <child link="calibration_board_holder_link"/>
+            <origin xyz="0 0 -0.047" rpy="0 0 0"/>
+        </joint>
+
+        <joint name="calibration_board_to_handeye_target_joint" type="fixed">
+            <parent link="calibration_board_holder_link"/>
+            <child link="handeye_target_link"/>
+            <origin xyz="-0.069 0 0.097" rpy="1.5708 1.5708 0"/>
+        </joint>
+    </xacro:macro>
+
+</robot>

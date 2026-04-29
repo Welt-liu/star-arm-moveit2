@@ -401,6 +401,18 @@
       effort="100"
       velocity="1" />
   </joint>
+  <link name="calib_connection_link"/>
+  <joint
+    name="link6_to_calib_connection_joint"
+    type="fixed">
+    <origin
+      xyz="0 -0.022 -0.054"
+      rpy="0 0 0" />
+    <parent
+      link="link6" />
+    <child
+      link="calib_connection_link" />
+  </joint>
   <link
     name="link7_left">
     <inertial>

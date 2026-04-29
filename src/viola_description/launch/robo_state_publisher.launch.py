@@ -10,7 +10,7 @@ import xacro
 
 def generate_launch_description():
 
-    robot_description_file = os.path.join(get_package_share_directory('viola_description'), 'urdf','viola_description.urdf')
+    robot_description_file = os.path.join(get_package_share_directory('viola_moveit_config'), 'config','viola_description.urdf.xacro')
     robot_description = Command(
         [FindExecutable(name='xacro'), ' ', robot_description_file])
 

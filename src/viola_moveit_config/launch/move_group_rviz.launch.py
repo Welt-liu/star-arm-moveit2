@@ -101,9 +101,14 @@ def generate_moveit_rviz_launch(ld, moveit_config):
         executable="rviz2",
         output="log",
         respawn=False,
-        arguments=["-d", LaunchConfiguration("rviz_config")],
+        arguments=[
+            "-d",
+            LaunchConfiguration("rviz_config"),
+            "--ros-args",
+            "--log-level",
+            "moveit_handeye_calibration_target:=warn",
+        ],
         parameters=rviz_parameters,
     )
 
     return ld
-

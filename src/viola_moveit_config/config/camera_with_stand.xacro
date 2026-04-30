@@ -1,38 +1,28 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://ros.org/wiki/xacro" >
 
-    <xacro:macro name="camera_with_stand" params="camera_pos_z 
-                                                  camera_roll:=0.0 camera_pitch:=0.0 camera_yaw:=0.0 
-                                                  camera_type:=realsense">
-        <!-- Variables -->
-        <xacro:property name="pi_val" value="3.1415926535"/>
+    <!-- Variables -->
+    <xacro:property name="pi_val" value="3.1415926535"/>
 
-        <!-- Materials -->
-        <material name="gray">
-            <color rgba="0.5 0.5 0.5 1" />
-        </material>
+    <!-- Materials -->
+    <material name="gray">
+        <color rgba="0.5 0.5 0.5 1" />
+    </material>
 
+    <xacro:macro name="camera_with_stand" params="camera_pos_z
+                                                  camera_roll:=0.0 
+                                                  camera_pitch:=0.0 
+                                                  camera_yaw:=0.0 
+                                                  camera_name:=realsense">
         <!-- Include realsense urdf macro -->
-        <xacro:if value="${camera_type == 'realsense'}">
-            <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
-        </xacro:if>
+        <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
 
         <!-- Links -->
-        <link name="camera_mount_link"/>
+        <link name="camera_connection_link"/>
 
         <link name="camera_base_link"/>
 
-        <xacro:if value="${camera_type != 'realsense'}">
-            <link name="camera_link">
-                <visual>
-                    <origin xyz="0 0 -0.015" rpy="0 0 0"/>
-                    <geometry>
-                        <cylinder radius="0.03" length="0.03"/>
-                    </geometry>
-                    <material name="gray"/>
-                </visual>
-            </link>
-        </xacro:if>
+        <link name="camera_mount_link"/>
 
         <link name="camera_holder_upper_arm_link">
             <visual>
@@ -78,27 +68,23 @@
 
 
         <!-- Joints -->
-        <joint name="camera_mount_camera_base_joint" type="fixed">
-            <parent link="camera_mount_link"/>
+        <xacro:sensor_d435i parent="camera_connection_link" name="${camera_name}" use_nominal_extrinsics="true" >
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </xacro:sensor_d435i>
+
+        <joint name="${camera_name}_bottom_screw_to_frame_camera_base_joint" type="fixed">
+            <parent link="${camera_name}_bottom_screw_frame"/>
             <child link="camera_base_link"/>
-            <origin xyz="0 0 0" rpy="${camera_roll} ${camera_pitch} ${camera_yaw}"/>
+            <origin xyz="-0.0095 0 0.0125" rpy="0 0 0"/>
         </joint>
 
-        <xacro:if value="${camera_type == 'realsense'}">
-            <xacro:sensor_d435i parent="camera_base_link" use_nominal_extrinsics="true" >
-                <origin xyz="0.0095 0 -0.0125" rpy="0 0 0"/>
-            </xacro:sensor_d435i>
-        </xacro:if>
-
-        <xacro:if value="${camera_type != 'realsense'}">
-            <joint name="camera_base_to_camera_joint" type="fixed">
-                <parent link="camera_base_link"/>
-                <child link="camera_link"/>
-                <origin xyz="0 0 0" rpy="0 ${pi_val/2} 0"/>
-            </joint>
-        </xacro:if>
+        <joint name="camera_base_to_camera_mount_joint" type="fixed">
+            <parent link="camera_base_link"/>
+            <child link="camera_mount_link"/>
+            <origin xyz="0 0 0" rpy="${camera_roll} ${camera_pitch} ${camera_yaw}"/>
+        </joint>
         
-        <joint name="camera_base_to_upper_arm_joint" type="fixed">
+        <joint name="camera_mount_to_upper_arm_joint" type="fixed">
             <parent link="camera_mount_link"/>
             <child link="camera_holder_upper_arm_link"/>
             <origin xyz="-0.0125 0 0.03" rpy="${pi_val} ${pi_val/2} 0"/>

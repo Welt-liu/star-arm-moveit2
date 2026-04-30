@@ -5,9 +5,10 @@
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
 
     <xacro:arg name="launch_calibration" default="true" />
+    <xacro:arg name="use_camera_calibration" default="false" />
 
     <xacro:arg name="launch_camera" default="false" />
-    <xacro:arg name="camera_type" default="realsense" />
+    <xacro:arg name="camera_name" default="realsense" />
     <xacro:arg name="camera_pos_x" default="0.4" />
     <xacro:arg name="camera_pos_y" default="0.0" />
     <xacro:arg name="camera_pos_z" default="0.68" />
@@ -23,17 +24,19 @@
 
     <xacro:viola_description_ros2_control name="FakeSystem" initial_positions_file="$(arg initial_positions_file)"/>
 
-    <!-- Conditionally include camera-->
-    <xacro:if value="$(eval launch_camera)">
+    <!-- Conditionally include measured camera pose-->
+    <xacro:if value="$(eval launch_camera and not use_camera_calibration)">
         <xacro:include filename="$(find viola_moveit_config)/config/camera_with_stand.xacro"/>
         <xacro:camera_with_stand camera_pos_z="$(arg camera_pos_z)" 
-                                 camera_roll="$(arg camera_pos_roll)" camera_pitch="$(arg camera_pos_pitch)" camera_yaw="$(arg camera_pos_yaw)" 
-                                 camera_type="$(arg camera_type)" />
+                                 camera_roll="$(arg camera_pos_roll)" 
+                                 camera_pitch="$(arg camera_pos_pitch)" 
+                                 camera_yaw="$(arg camera_pos_yaw)" 
+                                 camera_name="$(arg camera_name)" />
 
         <!-- Connect camera to robot base -->
-        <joint name="base_link_camera_mount_joint" type="fixed">
+        <joint name="base_link_to_camera_connection_joint" type="fixed">
             <parent link="base_link"/>
-            <child link="camera_mount_link"/>
+            <child link="camera_connection_link"/>
             <origin xyz="$(arg camera_pos_x) $(arg camera_pos_y) $(arg camera_pos_z)" 
                     rpy="0 0 0"/>
         </joint>

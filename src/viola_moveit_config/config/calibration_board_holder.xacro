@@ -18,7 +18,7 @@
             </visual>
         </link>
 
-        <link name="handeye_target_link" />
+        <link name="calibration_board_origo" />
 
         <!-- Joints -->
         <joint name="${parent}_to_calibration_board_joint" type="fixed">
@@ -27,9 +27,9 @@
             <origin xyz="0 0 -0.047" rpy="0 0 0"/>
         </joint>
 
-        <joint name="calibration_board_to_handeye_target_joint" type="fixed">
+        <joint name="calibration_board_to_calibration_board_origo_joint" type="fixed">
             <parent link="calibration_board_holder_link"/>
-            <child link="handeye_target_link"/>
+            <child link="calibration_board_origo"/>
             <origin xyz="-0.069 0 0.097" rpy="1.5708 1.5708 0"/>
         </joint>
     </xacro:macro>

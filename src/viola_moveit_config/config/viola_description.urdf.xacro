@@ -8,7 +8,7 @@
     <xacro:arg name="use_camera_calibration" default="false" />
 
     <xacro:arg name="launch_camera" default="false" />
-    <xacro:arg name="camera_name" default="realsense" />
+    <xacro:arg name="camera_name" default="camera" />
     <xacro:arg name="camera_pos_x" default="0.4" />
     <xacro:arg name="camera_pos_y" default="0.0" />
     <xacro:arg name="camera_pos_z" default="0.68" />

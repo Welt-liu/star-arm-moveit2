@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="calibrated_camera_with_stand">
 
-    <xacro:arg name="camera_name" default="realsense" />
+    <xacro:arg name="camera_name" default="camera" />
     <xacro:arg name="camera_pos_z" default="0.64" />
     <xacro:arg name="camera_pos_roll" default="-0.03" />
     <xacro:arg name="camera_pos_pitch" default="1.57079633" />
@@ -9,7 +9,7 @@
 
     <xacro:include filename="$(find viola_moveit_config)/config/camera_with_stand.xacro"/>
 
-    <link name="camera_color_optical_frame"/>
+    <link name="realsense_color_optical_frame"/>
 
     <xacro:camera_with_stand camera_pos_z="$(arg camera_pos_z)"
                              camera_roll="$(arg camera_pos_roll)"
@@ -18,10 +18,10 @@
                              camera_name="$(arg camera_name)" />
 
     <joint name="camera_color_optical_frame_to_camera_connection_joint" type="fixed">
-        <parent link="camera_color_optical_frame"/>
+        <parent link="realsense_color_optical_frame"/>
         <child link="camera_connection_link"/>
-        <origin xyz="0.033 0.012 -0.011"
-                rpy="0.785 -1.571 0.000"/>
+        <origin xyz="0.0325 0.0125 -0.0106"
+                rpy="1.5707963268 -1.5707963268 0"/>
     </joint>
 
 </robot>

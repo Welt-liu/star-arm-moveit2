@@ -17,7 +17,7 @@
                              camera_yaw="$(arg camera_pos_yaw)"
                              camera_name="$(arg camera_name)" />
 
-    <joint name="camera_color_optical_frame_to_camera_connection_joint" type="fixed">
+    <joint name="realsense_color_optical_frame_to_camera_connection_joint" type="fixed">
         <parent link="realsense_color_optical_frame"/>
         <child link="camera_connection_link"/>
         <origin xyz="0.0325 0.0125 -0.0106"

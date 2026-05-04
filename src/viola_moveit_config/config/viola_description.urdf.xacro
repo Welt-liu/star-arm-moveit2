@@ -4,7 +4,7 @@
     <!-- Arguments -->
     <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
 
-    <xacro:arg name="launch_calibration" default="true" />
+    <xacro:arg name="launch_calibration" default="false" />
     <xacro:arg name="use_camera_calibration" default="false" />
 
     <xacro:arg name="launch_camera" default="false" />

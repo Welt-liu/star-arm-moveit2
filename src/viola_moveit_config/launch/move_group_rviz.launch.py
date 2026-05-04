@@ -13,9 +13,16 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("viola_description", package_name="viola_moveit_config").to_moveit_configs()
+    launch_calibration = LaunchConfiguration("launch_calibration")
+    moveit_config = MoveItConfigsBuilder(
+        "viola_description",
+        package_name="viola_moveit_config",
+    ).robot_description(
+        mappings={"launch_calibration": launch_calibration}
+    ).to_moveit_configs()
 
     ld = LaunchDescription()
+    ld.add_action(DeclareBooleanLaunchArg("launch_calibration", default_value=False))
 
     generate_move_group_launch(ld, moveit_config)
     generate_moveit_rviz_launch(ld, moveit_config)

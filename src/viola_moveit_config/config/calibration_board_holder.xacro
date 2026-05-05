@@ -2,8 +2,8 @@
 <robot xmlns:xacro="http://ros.org/wiki/xacro">
 
     <!-- Materials -->
-    <material name="green">
-        <color rgba="0 0.8 0 1" />
+    <material name="gray">
+        <color rgba="0.7 0.7 0.7 1" />
     </material>
 
     <!-- Links -->
@@ -11,10 +11,12 @@
         <link name="calibration_board_holder_link">
             <visual>
                 <geometry>
-                    <box size="0.138 0.003 0.097"/>
+                    <box size="0.12 0.003 0.08"/>
+                    <!-- <mesh filename="file://$(find viola_description)/meshes/APRIL-TAG-MOUNT-FOR-VIOLA-ARM.STL" 
+                          scale="0.001 0.001 0.001"/> -->
                 </geometry>
-                <material name="green"/>
-                <origin xyz="0 0 0.0485" rpy="0 0 0"/>
+                <material name="gray"/>
+                <origin xyz="0 0 0.04" rpy="0 0 0"/>
             </visual>
         </link>
 
@@ -30,7 +32,7 @@
         <joint name="calibration_board_to_calibration_board_origo_joint" type="fixed">
             <parent link="calibration_board_holder_link"/>
             <child link="calibration_board_origo"/>
-            <origin xyz="-0.069 0 0.097" rpy="1.5708 1.5708 0"/>
+            <origin xyz="-0.053 0 0.073" rpy="1.5708 1.5708 0"/>
         </joint>
     </xacro:macro>
 

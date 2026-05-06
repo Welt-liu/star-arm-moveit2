@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- Arguments -->
+    <xacro:arg name="camera_name" default="camera" />
+
+    <!-- Include realsense urdf macro -->
+    <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+
+    <!-- Links -->
+    <link name="realsense_color_optical_frame"/>
+
+    <link name="camera_connection_link"/>
+
+    <!-- Joints -->
+    <joint name="realsense_color_optical_frame_to_camera_connection_joint" type="fixed">
+        <parent link="realsense_color_optical_frame"/>
+        <child link="camera_connection_link"/>
+        <origin xyz="0.0325 0.0125 -0.0106"
+                rpy="1.5707963268 -1.5707963268 0"/>
+    </joint>
+
+    <xacro:sensor_d435i parent="camera_connection_link" name="$(arg camera_name)" use_nominal_extrinsics="true" >
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:sensor_d435i>
+
+</robot>
